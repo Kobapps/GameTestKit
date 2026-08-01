@@ -1,0 +1,25 @@
+{
+  "name": "Dragging a card onto the board",
+  "description": "A real pointer drag — press, travel, release — lands the card in the slot.",
+  "tags": ["smoke", "board", "demo"],
+
+  "setup": [
+    { "call": "demo.reset" },
+    { "call": "demo.start" },
+    { "waitForVisible": "id:card_dragon" }
+  ],
+
+  "steps": [
+    { "assert": "demo.placedCard == ''", "message": "Nothing is on the board yet" },
+
+    { "drag": "id:card_dragon", "to": "id:board_slot", "duration": 0.5 },
+
+    { "waitFor": "demo.placedCard == 'Dragon'", "timeout": 5 },
+    { "assertText": "id:status_label", "contains": "Placed Dragon" },
+    { "screenshot": "card-placed" }
+  ],
+
+  "teardown": [
+    { "call": "demo.reset" }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "name": "Demo smoke",
+  "description": "Everything tagged demo, with one retry and screenshots on failure.",
+  "tags": ["demo"],
+  "options": {
+    "retries": 1,
+    "stopOnFirstFailure": false,
+    "pointer": "mouse",
+    "inputSpeed": 1,
+    "screenshotOnFailure": true,
+    "failOnLogError": true,
+    "reportFormats": ["junit", "json", "html"]
+  }
+}

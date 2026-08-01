@@ -104,3 +104,6 @@ InitTestScene*.unity*
 
 # Auto-generated cache in Assets folder
 /[Aa]ssets/[Ss]ceneDependencyCache*
+
+# GameTestKit run artifacts: reports and screenshots written by a test run.
+/GameTestKit/

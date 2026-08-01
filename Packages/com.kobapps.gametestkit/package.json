@@ -1,0 +1,47 @@
+{
+  "name": "com.kobapps.gametestkit",
+  "version": "1.0.0",
+  "displayName": "GameTestKit",
+  "description": "AAA-grade end-to-end game testing framework for Unity. Drives real gameplay with real simulated user input (click, tap, drag, swipe, keys, gamepad) at the device level, addresses game objects with a Playwright-style locator language with implicit waiting, runs declarative .gametest.json scripts or a C# fluent API, batches suites from the Editor, the CLI or a built player, records tests from live play, and exposes a first-class AI interface so agents can discover, author, run and debug tests on their own.",
+  "unity": "6000.0",
+  "keywords": [
+    "testing",
+    "automation",
+    "qa",
+    "e2e",
+    "input",
+    "ci"
+  ],
+  "author": {
+    "name": "Kobapps",
+    "url": "https://github.com/Kobapps"
+  },
+  "license": "MIT",
+  "type": "tool",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Kobapps/GameTestKit.git"
+  },
+  "documentationUrl": "https://github.com/Kobapps/GameTestKit#readme",
+  "changelogUrl": "https://github.com/Kobapps/GameTestKit/blob/main/Packages/com.kobapps.gametestkit/CHANGELOG.md",
+  "licensesUrl": "https://github.com/Kobapps/GameTestKit/blob/main/Packages/com.kobapps.gametestkit/LICENSE.md",
+  "dependencies": {
+    "com.unity.ugui": "2.0.0",
+    "com.unity.inputsystem": "1.7.0"
+  },
+  "relatedPackages": {
+    "com.kobapps.editorcorekit": "2.0.0"
+  },
+  "samples": [
+    {
+      "displayName": "Demo Game & Tests",
+      "description": "A tiny playable scene (menu, shop, drag-and-drop board) with .gametest.json scripts covering every step type.",
+      "path": "Samples~/DemoGame"
+    },
+    {
+      "displayName": "Unity Test Framework Bridge",
+      "description": "Drop-in test assembly that exposes every .gametest.json script as a PlayMode NUnit test, so `-runTests` and the Test Runner window pick them up.",
+      "path": "Samples~/TestFrameworkBridge"
+    }
+  ]
+}

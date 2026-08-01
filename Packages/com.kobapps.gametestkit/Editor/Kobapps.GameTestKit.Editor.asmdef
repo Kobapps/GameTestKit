@@ -1,0 +1,23 @@
+{
+    "name": "Kobapps.GameTestKit.Editor",
+    "rootNamespace": "Kobapps.GameTestKit.Editor",
+    "references": [
+        "Kobapps.GameTestKit",
+        "EditorCoreKit.Editor",
+        "UnityEngine.UI",
+        "Unity.TextMeshPro",
+        "Unity.InputSystem",
+        "Kobapps.CodeEditor.Editor"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

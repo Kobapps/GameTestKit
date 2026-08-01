@@ -1,0 +1,29 @@
+{
+  "name": "Cannot buy what you cannot afford",
+  "description": "With 10 gold the sword stays unbought and the shop says so.",
+  "tags": ["shop", "demo"],
+
+  "setup": [
+    { "call": "demo.reset" },
+    { "call": "demo.start" },
+    { "click": "id:shop_button" },
+    { "waitForVisible": "id:shop_panel" },
+
+    // Spend down to 10 gold through the game itself rather than poking a field.
+    { "click": "id:buy_sword" },
+    { "click": "id:buy_shield" },
+    { "waitFor": "demo.gold == 10" }
+  ],
+
+  "steps": [
+    { "click": "id:buy_shield" },
+
+    { "assertText": "id:status_label", "contains": "Not enough gold" },
+    { "assert": "demo.gold == 10", "message": "A failed purchase must not charge the player" },
+    { "assert": "demo.items == 2", "message": "A failed purchase must not grant an item" }
+  ],
+
+  "teardown": [
+    { "call": "demo.reset" }
+  ]
+}

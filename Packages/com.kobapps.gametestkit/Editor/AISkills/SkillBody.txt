@@ -1,0 +1,175 @@
+# Writing and running GameTestKit tests
+
+You are authoring end-to-end tests for this Unity game with **GameTestKit**. A test is a JSON file
+that drives the real game with real simulated input — the same device-level events a player's mouse,
+finger, keyboard or gamepad produce. There is no compile step: you write a file, validate it, run it,
+and read a JSON result.
+
+Follow this loop. Do not skip step 2 — guessing selectors is the single biggest cause of tests that
+fail on their first step.
+
+## 1. Learn what exists
+
+Read the reference at the bottom of this document: every step verb, the selector language, the
+expression language, the scenes in the build, and the test ids already present in the project.
+
+To regenerate it after the game changes:
+
+```
+Unity -batchmode -projectPath . -executeMethod Kobapps.GameTestKit.Editor.AICommands.Catalogue -gtk-out catalogue.json -quit
+```
+
+## 2. Look at the screen before writing selectors
+
+```
+Unity -projectPath . -executeMethod Kobapps.GameTestKit.Editor.AICommands.Inspect -gtk-scene MainMenu -gtk-delay 2 -gtk-out screen.json
+```
+
+This enters play mode, loads the scene, waits for it to settle, and writes a snapshot: every
+interactable element with the selector to use for it, its screen rect, whether it is visible,
+whether it is interactable, and what is covering it if anything. It also lists the game state
+bindings that are live at runtime.
+
+Take selectors from that file. If the element you need has no stable selector, prefer **adding a
+`TestId` component** (see §5) over writing a fragile one.
+
+If the Editor is already in play mode, `Tools ▸ GameTestKit ▸ AI ▸ Inspect Current Scene` writes
+the same snapshot and copies a readable version to the clipboard.
+
+## 3. Write the script
+
+Create `Assets/GameTests/<kebab-case-name>.gametest.json`:
+
+```json
+{
+  "name": "Buying a sword spends gold",
+  "description": "Player with 100 gold buys the 60g sword and ends with 40.",
+  "tags": ["smoke", "shop"],
+  "scene": "MainMenu",
+
+  "setup": [
+    { "call": "grantGold", "args": [100] }
+  ],
+
+  "steps": [
+    { "click": "id:shop_button" },
+    { "waitForVisible": "id:shop_panel" },
+    { "click": "id:shop >> text:\"Sword\"" },
+    { "waitFor": "player.gold == 40", "timeout": 5 },
+    { "assertText": "id:gold_label", "equals": "40" },
+    { "screenshot": "after-purchase" }
+  ],
+
+  "teardown": [
+    { "call": "resetSave" }
+  ]
+}
+```
+
+Rules that matter:
+
+- **The JSON key is the verb.** `{"click": "..."}` is a click step. Everything else in the object is
+  a parameter of that verb. Use `{"step": "click", ...}` only if you need the verb spelled out.
+- **`setup` prepares, `steps` prove, `teardown` cleans up.** A failure in `setup` is reported as an
+  error (the test never got to run); a failure in `steps` is a real test failure. `teardown` always
+  runs, even after a failure.
+- **Never use `wait` to synchronise.** `{"wait": 2}` is a guess that is either too slow or too short
+  on someone else's machine. Use `waitForVisible`, `waitForGone`, `waitForScene` or `waitFor` with an
+  expression. Use `wait` only to model a deliberate human pause.
+- **Assert what the player sees and what the game holds.** A flow that clicks through without
+  assertions proves only that nothing threw.
+- Comments (`//`) and trailing commas are allowed — this parser tolerates both.
+
+## 4. Validate before running
+
+```
+Unity -batchmode -projectPath . -executeMethod Kobapps.GameTestKit.Editor.AICommands.Validate -gtk-test Assets/GameTests/buy-a-sword.gametest.json -quit
+```
+
+Exit code 0 means the script parses and every verb and parameter is known. This costs seconds; a
+failed run costs minutes.
+
+## 5. Make the game testable
+
+Two small additions to the game make tests short and stable. Ask for them (or add them) rather than
+working around their absence:
+
+**`TestId` components** — add the `TestId` component to any element a test touches and give it a
+stable id (`shop_button`, `gold_label`). Then `id:shop_button` keeps working when the hierarchy is
+reorganised or the game is localised. Everything else — names, paths, visible text — changes.
+
+**Bindings** — the bridge between a script and game internals:
+
+```csharp
+[RuntimeInitializeOnLoadMethod]
+static void RegisterTestHooks()
+{
+    GameTestBindings.BindValue("player.gold", () => Player.Instance.Gold, "Soft currency");
+    GameTestBindings.BindAction("grantGold", args => Player.Instance.Gold += Convert.ToInt32(args[0]));
+}
+```
+
+or declaratively, on any static member:
+
+```csharp
+[GameTestBinding("player.gold", Description = "Soft currency")]
+public static int Gold => Player.Instance.Gold;
+```
+
+Values are readable in `assert` and `waitFor` expressions; actions are callable with the `call` step.
+Use them to reach a state in one step instead of clicking through ten screens — but assert on what
+the *player* can see, not only on internals.
+
+## 6. Run
+
+One test, or a whole tagged batch:
+
+```
+Unity -batchmode -projectPath . \
+      -executeMethod Kobapps.GameTestKit.Editor.GameTesterCLI.Run \
+      -gtk-tags smoke -gtk-report Artifacts/gametests -gtk-stop-on-failure
+```
+
+Do **not** pass `-quit`: the run needs play mode, which outlives the `-executeMethod` call. The
+process exits by itself — 0 all passed, 1 test failures, 2 the run could not complete.
+
+Useful flags: `-gtk-test <path>` (one script), `-gtk-filter <substring>`, `-gtk-retries 1`,
+`-gtk-pointer touch`, `-gtk-speed 2` (slower, easier to watch), `-gtk-screenshot-every-step`,
+`-gtk-timeout <minutes>`.
+
+## 7. Read the results
+
+`<report>/results.json` has, per test: status, message, every step with its own status and duration,
+paths to screenshots, any errors the game logged, and frame-time statistics. `report.html` is the
+same thing for a human. `results.junit.xml` is for CI.
+
+When a test fails, read in this order:
+
+1. **The step message.** Failures are written to be actionable. "Found 1 match for `id:buy` but none
+   was usable after 5s: 'Canvas/Shop/Buy' is covered by 'Canvas/Tutorial/Blocker'" tells you the
+   selector was right and a tutorial overlay was in the way — the fix is a step to dismiss it, not a
+   different selector.
+2. **The failure screenshot** next to the results.
+3. **A fresh Inspect snapshot** at the point of failure if the message is not enough.
+
+Do not "fix" a failing test by adding waits or by loosening an assertion until it passes. Either the
+test is wrong about the game, or the game is wrong — decide which, and say so.
+
+## Common mistakes
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| "matched nothing" on the first step | Guessed the selector | Run Inspect and use a selector from it |
+| "is covered by …" | Modal, tutorial overlay or a full-screen raycast blocker | Add a step to dismiss it; `"force": true` only to *test* that blocking works |
+| "is not visible" but it is on screen | Element is animating in, or alpha 0 | `waitForVisible` before acting |
+| Passes alone, fails in a batch | Leaked state from an earlier test | Reset in `setup` via a binding, or set `"scene"` so the test starts clean |
+| Text assertion fails on a number | Formatting ("1,000" vs "1000") | Assert on a binding value, not the label, when the value is what matters |
+| Key steps fail | The EventSystem backend cannot type | Set Active Input Handling to the Input System package, or `"backend": "inputSystem"` |
+| `type` logs "did not reach" | uGUI input fields read text through the legacy backend | Nothing to do — the step falls back to feeding the field directly and continues |
+| Nothing responds to any click | An `InputSystemUIInputModule` with no actions assigned, or a `StandaloneInputModule` | The run logs which one; fix the EventSystem or set `"backend": "eventSystem"` |
+
+## When a C# test is the right answer instead
+
+Use `TestBuilder` in C# when a test needs real logic — generated data, a loop over every level, a
+custom step type. Register a custom verb with `StepRegistry.Register` and it becomes available to
+JSON scripts (and appears in this catalogue) like any built-in.

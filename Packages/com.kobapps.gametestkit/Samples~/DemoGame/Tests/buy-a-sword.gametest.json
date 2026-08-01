@@ -1,0 +1,34 @@
+{
+  "name": "Buying a sword spends gold",
+  "description": "The shop deducts the sword's price and the gold label keeps up with it.",
+  "tags": ["smoke", "shop", "demo"],
+
+  "setup": [
+    { "call": "demo.reset" },
+    { "call": "demo.start" },
+    { "waitForVisible": "id:shop_button" }
+  ],
+
+  "steps": [
+    { "assertText": "id:gold_label", "equals": "100" },
+
+    { "click": "id:shop_button" },
+    { "waitForVisible": "id:shop_panel" },
+
+    { "click": "id:buy_sword" },
+    { "waitFor": "demo.gold == 40", "timeout": 5 },
+
+    { "assertText": "id:gold_label", "equals": "40" },
+    { "assertText": "id:status_label", "contains": "Bought Sword" },
+    { "assert": "demo.items == 1", "message": "The sword should be in the inventory" },
+
+    { "screenshot": "after-purchase" },
+
+    { "click": "id:close_shop" },
+    { "assertHidden": "id:shop_panel" }
+  ],
+
+  "teardown": [
+    { "call": "demo.reset" }
+  ]
+}
