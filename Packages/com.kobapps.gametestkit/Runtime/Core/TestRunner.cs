@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using Kobapps.GameTestKit.Scripting;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -34,6 +35,10 @@ namespace Kobapps.GameTestKit
         private TestContext _context;
         private Exception _pendingFailure;
         private float _testDeadline;
+
+        /// <summary>Suite-wide fixtures, parsed once per run from <see cref="RunOptions.BeforeEachJson"/>.</summary>
+        private List<TestStep> _beforeEach = new List<TestStep>();
+        private List<TestStep> _afterEach = new List<TestStep>();
         private int _stepCounter;
         private float _originalTimeScale = 1f;
 
@@ -71,6 +76,32 @@ namespace Kobapps.GameTestKit
             Debug.Log($"[GameTestKit] Running {selection.Count} test(s), seed {Options.Seed}, " +
                       $"artifacts → {_artifacts.RunFolder}");
 
+            // Parsed once, here, so a broken fixture is one error at the start of the run rather than
+            // the same error repeated against every test in the batch.
+            EventSteps.ResetForRun();
+
+            try
+            {
+                _beforeEach = TestScriptParser.ParseFixture(Options.BeforeEachJson, "beforeEach");
+                _afterEach = TestScriptParser.ParseFixture(Options.AfterEachJson, "afterEach");
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[GameTestKit] {e.Message}");
+
+                foreach (var test in selection)
+                    Report.Tests.Add(new TestRecord
+                    {
+                        Name = test.Name,
+                        Category = test.Category,
+                        Status = TestStatus.Error,
+                        Message = e.Message,
+                    });
+
+                Finish(started);
+                yield break;
+            }
+
             LiveStatus.BeginRun(Report.Suite, selection.Count);
 
             _originalTimeScale = Time.timeScale;
@@ -104,6 +135,10 @@ namespace Kobapps.GameTestKit
             Debug.Log($"[GameTestKit] Input backend: {_backend.Name}, pointer: {Options.Pointer}, " +
                       $"capabilities: {_backend.Capabilities}");
 
+            // Said once, at the top of the run, because every problem it catches otherwise shows up as
+            // a step that passed followed by a wait that timed out somewhere else entirely.
+            InputReadiness.Report();
+
             InputOverlay.BeginSession(Report.Suite, Options.ShowInputOverlay);
 
             var user = new VirtualUser(_backend, Options);
@@ -124,12 +159,17 @@ namespace Kobapps.GameTestKit
                             Name = test.Name,
                             Description = test.Description,
                             SourcePath = test.SourcePath,
+                            Category = test.Category,
                             Status = TestStatus.Skipped,
                             Message = test.SkipReason ?? "Marked skip in the script.",
                         };
                         skipped.Tags.AddRange(test.Tags);
                         Report.Tests.Add(skipped);
                         TestFinished?.Invoke(skipped);
+
+                        // Streamed like any other verdict, or a skipped test would sit unmarked in a
+                        // watching UI until the whole batch finished.
+                        LiveStatus.EndTest(skipped);
                         continue;
                     }
 
@@ -143,6 +183,7 @@ namespace Kobapps.GameTestKit
                             Name = test.Name,
                             Description = test.Description,
                             SourcePath = test.SourcePath,
+                            Category = test.Category,
                             Attempt = attempt,
                             StartedAtUtc = DateTime.UtcNow.ToString("O"),
                         };
@@ -159,7 +200,7 @@ namespace Kobapps.GameTestKit
 
                     Report.Tests.Add(record);
                     TestFinished?.Invoke(record);
-                    LiveStatus.EndTest(!record.IsFailure);
+                    LiveStatus.EndTest(record);
 
                     if (record.IsFailure && Options.StopOnFirstFailure)
                     {
@@ -241,6 +282,24 @@ namespace Kobapps.GameTestKit
                 }
             }
 
+            // --- beforeEach ----------------------------------------------
+            // Before the test's own setup, so a suite-wide fixture establishes the world that a test's
+            // setup then adjusts. A failure here is an error for the same reason setup's is: the test
+            // never ran, and reporting it as a failure sends someone looking for a bug in the product.
+            foreach (var step in _beforeEach)
+            {
+                yield return RunStep(step, null, record, "setup");
+                if (_pendingFailure != null) break;
+            }
+
+            if (_pendingFailure != null)
+            {
+                Conclude(record, TestStatus.Error, "beforeEach failed: " + _pendingFailure.Message);
+                yield return RunAfterEach(record);
+                yield return FinishTest(record, started);
+                yield break;
+            }
+
             // --- setup ---------------------------------------------------
             foreach (var step in test.Setup)
             {
@@ -296,13 +355,43 @@ namespace Kobapps.GameTestKit
                 _pendingFailure = carried;
             }
 
+            yield return RunAfterEach(record);
             yield return FinishTest(record, started);
+        }
+
+        /// <summary>
+        /// The suite-wide fixture that always runs, after the test's own teardown.
+        /// </summary>
+        /// <remarks>
+        /// Best-effort like teardown: a fixture that cannot clean up is worth a warning, but turning a
+        /// green test red because the reset afterwards stumbled tells you nothing about the test.
+        /// </remarks>
+        private IEnumerator RunAfterEach(TestRecord record)
+        {
+            if (_afterEach.Count == 0) yield break;
+
+            var carried = _pendingFailure;
+            _pendingFailure = null;
+
+            foreach (var step in _afterEach)
+            {
+                yield return RunStep(step, null, record, "teardown");
+
+                if (_pendingFailure != null)
+                {
+                    Debug.LogWarning($"[GameTestKit] afterEach step failed: {_pendingFailure.Message}");
+                    _pendingFailure = null;
+                }
+            }
+
+            _pendingFailure = carried;
         }
 
         private IEnumerator FinishTest(TestRecord record, float started)
         {
             record.DurationSeconds = Time.realtimeSinceStartup - started;
             record.Logs.AddRange(_logs.Drain());
+            record.EventProofs.AddRange(EventSteps.TakeClosed());
             if (Options.CollectPerformance) record.Performance = _performance.Summarize();
             _context = null;
             yield break;

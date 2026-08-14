@@ -45,6 +45,8 @@ If failure screenshots matter to your triage — and they usually do — run the
 | `-gtk-filter <text>` | Substring match on test names. |
 | `-gtk-tags a,b` | Run tests carrying any of these tags. |
 | `-gtk-exclude-tags a,b` | Skip tests carrying any of these. |
+| `-gtk-categories a,b` | Run tests in these categories, nested ones included. |
+| `-gtk-exclude-categories a,b` | Skip these categories and everything under them. |
 | `-gtk-report <dir>` | Where reports and screenshots go. |
 | `-gtk-formats junit,json,html` | Which reports to write. |
 | `-gtk-retries N` | Re-run a failing test before reporting it. |
@@ -85,14 +87,20 @@ paths are embedded in it, so a failing check is readable without downloading the
 ## Sharding
 
 Tests run sequentially inside one Editor instance; parallelism belongs at the job level. Split by
-tag:
+category — the folders you already organise tests into are the shards:
 
 ```yaml
 strategy:
   matrix:
-    shard: [shop, combat, onboarding]
-# …  -gtk-tags ${{ matrix.shard }}
+    shard: [Shop, Combat, Onboarding]
+# …  -gtk-categories ${{ matrix.shard }}
 ```
+
+A category covers everything nested under it, so `Combat` picks up `Combat/Bosses` without the
+matrix having to list it. Split by tag instead (`-gtk-tags`) when your shards cut across the tree.
+
+Each shard writes its own JUnit file, and the `classname` in it carries the category
+(`GameTestKit.Combat.Bosses`), so a dashboard that merges the shards still groups them correctly.
 
 ## Running on a device
 

@@ -1,6 +1,6 @@
 {
   "name": "com.kobapps.gametestkit",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "displayName": "GameTestKit",
   "description": "AAA-grade end-to-end game testing framework for Unity. Drives real gameplay with real simulated user input (click, tap, drag, swipe, keys, gamepad) at the device level, addresses game objects with a Playwright-style locator language with implicit waiting, runs declarative .gametest.json scripts or a C# fluent API, batches suites from the Editor, the CLI or a built player, records tests from live play, and exposes a first-class AI interface so agents can discover, author, run and debug tests on their own.",
   "unity": "6000.0",
@@ -35,7 +35,7 @@
   "samples": [
     {
       "displayName": "Demo Game & Tests",
-      "description": "A tiny playable scene (menu, shop, drag-and-drop board) with .gametest.json scripts covering every step type.",
+      "description": "A tiny playable scene (menu, shop, drag-and-drop board) with .gametest.json scripts covering every step type, organised into categories, plus a miniature analytics hub and four proof cases showing how to test what the game sends.",
       "path": "Samples~/DemoGame"
     },
     {

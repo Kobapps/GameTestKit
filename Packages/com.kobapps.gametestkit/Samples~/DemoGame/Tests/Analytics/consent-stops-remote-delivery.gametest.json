@@ -1,0 +1,47 @@
+{
+  "name": "Withholding consent keeps events off the remote sink",
+  "description": "The event fires and is perfectly formed, and still must not leave the device. Payload assertions cannot see this at all — 'it was sent' and 'it arrived' are different claims, and a privacy regression looks exactly like a working test until you check reach.",
+  "tags": ["analytics", "privacy", "demo"],
+  "category": "Analytics",
+
+  // Self-sufficient, like every other sample: reset then start. demo.start alone would inherit the
+  // previous test's gold, because Spawn() keeps a live instance — and a suite-level fixture cannot
+  // help a test that someone runs on its own from the GameTester window.
+  "setup": [
+    { "call": "demo.reset" },
+    { "call": "demo.start" },
+    { "waitForVisible": "id:shop_button" }
+  ],
+
+  "steps": [
+    { "call": "demo.setConsent", "args": [false] },
+
+    { "eventCase": "Purchase", "case": "no-consent",
+      "companions": ["Shop_Opened"] },
+
+    { "click": "id:shop_button" },
+    { "waitForVisible": "id:shop_panel" },
+    { "click": "id:buy_sword" },
+    { "waitForEvent": "Purchase", "within": 5 },
+
+    { "expectEvent": "Purchase",
+      "props": {
+        "Item": "Sword",
+        "Purchase_Result": "@const:Kobapps.GameTestKit.Samples.DemoTelemetry.RESULT_BOUGHT"
+      },
+
+      // The whole point of the case. Local logging carries on; the remote sink must refuse.
+      "delivered": ["Console"],
+      "notDelivered": ["Remote"] },
+
+    // And the game itself is unaffected — consent is not a feature switch.
+    { "assert": "demo.gold == 40" },
+    { "assert": "demo.items == 1" },
+
+    { "eventProof": true }
+  ],
+
+  "teardown": [
+    { "call": "demo.setConsent", "args": [true] }
+  ]
+}

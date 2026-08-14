@@ -43,8 +43,12 @@ namespace Kobapps.GameTestKit.Samples
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         private static void RegisterTestBindings()
         {
-            GameTestBindings.BindAction("demo.start", _ => Spawn(),
-                "Creates the demo game UI in the current scene.");
+            // A coroutine, not an action, so it can wait for the UI it just built to be able to
+            // receive input. An EventSystem created this frame has its input module enabled but its
+            // actions not yet listening; a tap delivered before that lands nowhere, and the failure
+            // is silent — the click step passes and whatever it was supposed to open never opens.
+            GameTestBindings.BindCoroutine("demo.start", _ => StartRoutine(),
+                "Creates the demo game UI in the current scene and waits until it can take input.");
 
             GameTestBindings.BindAction("demo.reset", _ =>
             {
@@ -78,6 +82,23 @@ namespace Kobapps.GameTestKit.Samples
             var host = new GameObject("DemoGame");
             Instance = host.AddComponent<DemoGame>();
             return Instance;
+        }
+
+        /// <summary>
+        /// Spawns the UI and does not return until uGUI can actually route a pointer to it.
+        /// </summary>
+        /// <remarks>
+        /// Two frames, because that is what it takes: one for the EventSystem's input module to enable
+        /// and one for its actions to start reporting. Without the wait the first interaction of a run
+        /// is a coin toss — which is exactly the kind of flake that gets blamed on the test rather than
+        /// on the fixture that set it up.
+        /// </remarks>
+        private static IEnumerator StartRoutine()
+        {
+            Spawn();
+
+            yield return null;
+            yield return null;
         }
 
         // ================================================================ construction
@@ -192,7 +213,15 @@ namespace Kobapps.GameTestKit.Samples
                 // A module added from code has no actions assigned, and an InputSystemUIInputModule
                 // without actions silently ignores every pointer event — including simulated ones.
                 // The Editor's "UI ▸ Event System" menu does this for you; AddComponent does not.
-                moduleType.GetMethod("AssignDefaultActions")?.Invoke(module, null);
+                var assign = moduleType.GetMethod("AssignDefaultActions");
+
+                if (assign == null)
+                    Debug.LogError(
+                        "[DemoGame] This version of the Input System has no AssignDefaultActions, so the " +
+                        "UI input module has no actions and will ignore every pointer event. Every click " +
+                        "and drag in this sample will appear to do nothing.");
+                else
+                    assign.Invoke(module, null);
             }
             else
             {
@@ -209,6 +238,11 @@ namespace Kobapps.GameTestKit.Samples
         {
             _shopPanel.SetActive(true);
             Status("Shop open");
+
+            DemoAnalytics.Send("Shop_Opened", new Dictionary<string, object>
+            {
+                { "Gold", Gold },
+            });
         }
 
         private void CloseShop()
@@ -217,24 +251,52 @@ namespace Kobapps.GameTestKit.Samples
             Status("Shop closed");
         }
 
+        /// <summary>
+        /// Buying, and the event that reports it.
+        /// </summary>
+        /// <remarks>
+        /// The declined path sends the <em>same</em> event with a different result rather than staying
+        /// silent, which is what lets a funnel tell "nobody tried" apart from "everybody tried and could
+        /// not afford it". It is also why the sample can show <c>Purchase_Result</c> and
+        /// <c>Fail_Reason</c> being asserted against the game's own constants.
+        /// </remarks>
         private void Buy(string item, int price)
         {
-            if (Gold < price)
+            bool affordable = Gold >= price;
+
+            if (affordable)
+            {
+                Gold -= price;
+                Inventory.Add(item);
+                RefreshGold();
+                Status($"Bought {item}");
+            }
+            else
             {
                 Status($"Not enough gold for {item}");
-                return;
             }
 
-            Gold -= price;
-            Inventory.Add(item);
-            RefreshGold();
-            Status($"Bought {item}");
+            DemoAnalytics.Send("Purchase", new Dictionary<string, object>
+            {
+                { "Item", item },
+                { "Price", price },
+                { "Gold_After", Gold },
+                { "Purchase_Result", affordable ? DemoTelemetry.RESULT_BOUGHT : DemoTelemetry.RESULT_DECLINED },
+                { "Fail_Reason", affordable ? DemoTelemetry.REASON_NONE : DemoTelemetry.REASON_NOT_ENOUGH_GOLD },
+                { "Engraved_For", PlayerName },
+                { "Items_Owned", Inventory.Count },
+            });
         }
 
         internal void PlaceCard(string cardName)
         {
             PlacedCard = cardName;
             Status($"Placed {cardName}");
+
+            DemoAnalytics.Send("Card_Placed", new Dictionary<string, object>
+            {
+                { "Card", cardName },
+            });
         }
 
         private void RefreshGold()

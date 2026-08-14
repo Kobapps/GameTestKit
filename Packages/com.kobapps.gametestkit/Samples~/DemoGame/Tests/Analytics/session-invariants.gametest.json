@@ -1,0 +1,67 @@
+{
+  "name": "The session's events hold together",
+  "description": "The checks no single payload can reveal. Plays a normal session and then asks the whole event stream whether it makes sense: nothing dropped, nothing sent twice, and the properties that are supposed to be on everything actually are.\n\nWorth running last in a suite, when there is a real session to look at.",
+  "tags": ["analytics", "demo"],
+  "category": "Analytics",
+
+  // Self-sufficient, like every other sample: reset then start. demo.start alone would inherit the
+  // previous test's gold, because Spawn() keeps a live instance — and a suite-level fixture cannot
+  // help a test that someone runs on its own from the GameTester window.
+  "setup": [
+    { "call": "demo.reset" },
+    { "call": "demo.start" },
+    { "waitForVisible": "id:shop_button" }
+  ],
+
+  "steps": [
+    // Enough gold that all three purchases succeed. Without it the third is declined — 100 gold
+    // buys a sword and two shields with 10 to spare, and "three purchases" would quietly mean
+    // "two purchases and a refusal".
+    { "call": "demo.grantGold", "args": [200] },
+
+    { "eventCase": "Session", "case": "invariants" },
+
+    // Something to look at: three purchases across two shop visits, then a card.
+    { "click": "id:shop_button" },
+    { "waitForVisible": "id:shop_panel" },
+    { "click": "id:buy_sword" },
+    { "waitForEvent": "Purchase", "within": 5 },
+    { "click": "id:buy_shield" },
+    { "waitForEvent": "Purchase", "count": 2, "within": 5 },
+    { "click": "id:close_shop" },
+
+    { "click": "id:shop_button" },
+    { "waitForVisible": "id:shop_panel" },
+    { "click": "id:buy_shield" },
+    { "waitForEvent": "Purchase", "count": 3, "within": 5 },
+    { "click": "id:close_shop" },
+
+    { "drag": "id:card_dragon", "to": "id:board_slot", "duration": 0.4 },
+    { "waitForEvent": "Card_Placed", "within": 5 },
+
+    { "eventInvariants": true,
+
+      // Gaps are looked for in the GAME'S counter, not the log's. The log numbers what it receives,
+      // so its own numbering has no holes by construction; Event_Number is stamped by the hub at
+      // emit time, and a hole in that is the only in-band evidence something was dropped on the way.
+      // It is also excluded from the duplicate comparison automatically — a value that differs by
+      // construction would otherwise make every payload unique and switch that check off silently.
+      "sequenceProperty": "Event_Number",
+
+      // The same payload twice inside 250 ms is a double-subscribe, not a player double-clicking.
+      "duplicates": true,
+      "duplicateWindowMs": 250,
+
+      // On every event, or the analyst cannot join anything to anything.
+      "requiredProps": ["Session_Id", "Event_Number"] },
+
+    // Three purchases were made and three reported. A count over the whole session catches the
+    // subscriber that was attached twice, which per-case counts inside a window cannot.
+    { "expectEvent": "Purchase", "count": 3, "index": "last",
+      "props": { "Item": "Shield" } },
+
+    { "expectOrder": ["Shop_Opened", "Purchase", "Shop_Opened", "Card_Placed"] },
+
+    { "eventProof": true }
+  ]
+}

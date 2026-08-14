@@ -14,7 +14,7 @@ namespace Kobapps.GameTestKit.Editor
     /// <code>
     /// Unity -batchmode -projectPath . \
     ///       -executeMethod Kobapps.GameTestKit.Editor.GameTesterCLI.Run \
-    ///       -gtk-tags smoke -gtk-report Artifacts/gametests -gtk-stop-on-failure
+    ///       -gtk-categories Shop,Onboarding -gtk-report Artifacts/gametests -gtk-stop-on-failure
     /// </code>
     /// Do <b>not</b> pass <c>-quit</c>: the run needs play mode, which outlives the
     /// <c>-executeMethod</c> call. The process exits by itself with 0 (all passed), 1 (failures) or
@@ -43,6 +43,7 @@ namespace Kobapps.GameTestKit.Editor
 
             Debug.Log("[GameTestKit] CLI run starting: " +
                       $"filter='{options.NameFilter}' tags=[{string.Join(",", options.Tags)}] " +
+                      $"categories=[{string.Join(",", options.Categories)}] " +
                       $"paths={options.Paths.Count} report='{options.ArtifactRoot}'");
 
             var errors = new List<string>();
@@ -88,6 +89,7 @@ namespace Kobapps.GameTestKit.Editor
                 var item = JsonValue.NewObject()
                     .Set("name", test.Name)
                     .Set("source", test.SourcePath ?? "")
+                    .Set("category", test.Category ?? "")
                     .Set("steps", test.Steps.Count)
                     .Set("scene", test.Scene ?? "");
 
@@ -187,6 +189,8 @@ namespace Kobapps.GameTestKit.Editor
                     case "-gtk-filter": options.NameFilter = Next() ?? ""; break;
                     case "-gtk-tags": AddAll(options.Tags, Next()); break;
                     case "-gtk-exclude-tags": AddAll(options.ExcludeTags, Next()); break;
+                    case "-gtk-categories": AddAll(options.Categories, Next()); break;
+                    case "-gtk-exclude-categories": AddAll(options.ExcludeCategories, Next()); break;
                     case "-gtk-test": options.Paths.Add(Next()); break;
                     case "-gtk-suite": ApplySuite(options, Next()); break;
                     case "-gtk-report": options.ArtifactRoot = Next() ?? options.ArtifactRoot; break;
@@ -221,6 +225,8 @@ namespace Kobapps.GameTestKit.Editor
 
             options.Tags.RemoveAll(string.IsNullOrWhiteSpace);
             options.Paths.RemoveAll(string.IsNullOrWhiteSpace);
+            Normalize(options.Categories);
+            Normalize(options.ExcludeCategories);
             return options;
         }
 
@@ -247,6 +253,8 @@ namespace Kobapps.GameTestKit.Editor
             to.NameFilter = from.NameFilter;
             to.Tags.Clear(); to.Tags.AddRange(from.Tags);
             to.ExcludeTags.Clear(); to.ExcludeTags.AddRange(from.ExcludeTags);
+            to.Categories.Clear(); to.Categories.AddRange(from.Categories);
+            to.ExcludeCategories.Clear(); to.ExcludeCategories.AddRange(from.ExcludeCategories);
             to.Paths.Clear(); to.Paths.AddRange(from.Paths);
             to.RunRepeat = from.RunRepeat;
             to.Retries = from.Retries;
@@ -268,6 +276,17 @@ namespace Kobapps.GameTestKit.Editor
             to.CollectPerformance = from.CollectPerformance;
             to.ArtifactRoot = from.ArtifactRoot;
             to.ReportFormats.Clear(); to.ReportFormats.AddRange(from.ReportFormats);
+        }
+
+        /// <summary>Cleans a category list in place, dropping the entries that normalise to nothing.</summary>
+        private static void Normalize(List<string> categories)
+        {
+            for (int i = categories.Count - 1; i >= 0; i--)
+            {
+                var normalized = TestCategory.Normalize(categories[i]);
+                if (normalized.Length == 0) categories.RemoveAt(i);
+                else categories[i] = normalized;
+            }
         }
 
         private static void AddAll(List<string> target, string commaSeparated)

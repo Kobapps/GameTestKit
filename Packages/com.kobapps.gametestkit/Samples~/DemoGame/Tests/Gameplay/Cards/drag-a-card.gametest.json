@@ -2,6 +2,7 @@
   "name": "Dragging a card onto the board",
   "description": "A real pointer drag — press, travel, release — lands the card in the slot.",
   "tags": ["smoke", "board", "demo"],
+  "category": "Gameplay/Cards",
 
   "setup": [
     { "call": "demo.reset" },

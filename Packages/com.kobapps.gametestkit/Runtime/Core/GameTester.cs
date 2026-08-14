@@ -288,6 +288,9 @@ namespace Kobapps.GameTestKit
 
                 foreach (var scriptPath in json["paths"].AsStringList()) options.Paths.Add(scriptPath);
                 foreach (var tag in json["tags"].AsStringList()) options.Tags.Add(tag);
+                foreach (var category in json["categories"].AsStringList()) options.Categories.Add(category);
+                foreach (var category in json["excludeCategories"].AsStringList())
+                    options.ExcludeCategories.Add(category);
                 if (json.Has("nameFilter")) options.NameFilter = json["nameFilter"].AsString("");
 
                 request.Options = options;
@@ -302,7 +305,7 @@ namespace Kobapps.GameTestKit
 
         /// <summary>
         /// Player command line:
-        /// <c>MyGame.exe -gametests -gametest-tags smoke -gametest-report C:\out -gametest-quit</c>
+        /// <c>MyGame.exe -gametests -gametest-categories Shop,Onboarding -gametest-report C:\out -gametest-quit</c>
         /// </summary>
         private static RunOptions ReadCommandLine()
         {
@@ -331,6 +334,13 @@ namespace Kobapps.GameTestKit
                         options.Tags.AddRange((Next() ?? "").Split(','));
                         requested = true;
                         break;
+                    case "-gametest-categories":
+                        options.Categories.AddRange((Next() ?? "").Split(','));
+                        requested = true;
+                        break;
+                    case "-gametest-exclude-categories":
+                        options.ExcludeCategories.AddRange((Next() ?? "").Split(','));
+                        break;
                     case "-gametest-file":
                         options.Paths.Add(Next());
                         requested = true;
@@ -350,6 +360,8 @@ namespace Kobapps.GameTestKit
             if (!requested) return null;
 
             options.Tags.RemoveAll(string.IsNullOrWhiteSpace);
+            options.Categories.RemoveAll(string.IsNullOrWhiteSpace);
+            options.ExcludeCategories.RemoveAll(string.IsNullOrWhiteSpace);
             options.Paths.RemoveAll(string.IsNullOrWhiteSpace);
             return options;
         }

@@ -1,0 +1,70 @@
+{
+  "name": "Purchase reports a completed buy",
+  "description": "Plays a real purchase — clicks through the shop rather than forcing state — and proves what went on the wire: the payload, how many times it went, and which sinks took it.",
+  "tags": ["analytics", "demo"],
+  "category": "Analytics",
+
+  // Self-sufficient, like every other sample: reset then start. demo.start alone would inherit the
+  // previous test's gold, because Spawn() keeps a live instance — and a suite-level fixture cannot
+  // help a test that someone runs on its own from the GameTester window.
+  "setup": [
+    { "call": "demo.reset" },
+    { "call": "demo.start" },
+    { "waitForVisible": "id:shop_button" }
+  ],
+
+  "steps": [
+    // Opens the window. Everything asserted below is scoped to what happens after this line, so a
+    // suite running cases back to back never sees the previous one's events.
+    { "eventCase": "Purchase", "case": "bought",
+      "companions": ["Shop_Opened"] },
+
+    { "click": "id:shop_button" },
+    { "waitForVisible": "id:shop_panel" },
+    { "click": "id:buy_sword" },
+
+    // An event, not a sleep. This is the difference between a test that is slow and one that is flaky.
+    { "waitForEvent": "Purchase", "within": 5 },
+
+    { "expectEvent": "Purchase",
+      "count": 1,
+      "props": {
+        // A literal, when the case knows exactly what it played to.
+        "Item": "Sword",
+        "Price": 60,
+
+        // Against the game's own constants rather than a copied string: renaming
+        // DemoTelemetry.RESULT_BOUGHT then fails this test instead of silently passing it.
+        "Purchase_Result": "@const:Kobapps.GameTestKit.Samples.DemoTelemetry.RESULT_*",
+        "Fail_Reason": "@const:Kobapps.GameTestKit.Samples.DemoTelemetry.REASON_NONE",
+
+        // A bound, not just "is a number". Gold_After of 40 is right; of 0 is a bug that
+        // "type:number" would wave through.
+        "Gold_After": 40,
+        "Items_Owned": ">=1",
+
+        // Present but unpredictable.
+        "Session_Id": "*",
+        "Event_Number": ">0",
+
+        // Must NOT be on this event. A debug flag that escapes into production telemetry is
+        // invisible to every assertion that only checks the properties it expects.
+        "Debug_Only": "!"
+      },
+      "delivered": ["Console", "Remote"],
+      "screenshot": true },
+
+    // The count above is doing real work: a purchase that reports twice silently doubles revenue,
+    // and no check that only asks "did it fire" can see that.
+
+    { "expectOrder": ["Shop_Opened", "Purchase"] },
+
+    // Nothing else fired in the window. Catches the event somebody adds later without thinking
+    // about which funnels it lands in.
+    { "expectOnlyExpectedEvents": true },
+
+    // Writes the proof beside the report: the whole payload, per-property verdicts, the sinks, and
+    // the screenshot of the moment it went.
+    { "eventProof": true }
+  ]
+}

@@ -28,6 +28,20 @@ namespace Kobapps.GameTestKit
             }
         }
 
+        /// <summary>One test that has already finished, so a watcher can fill it in as the run goes.</summary>
+        private sealed class Finished
+        {
+            public string Name;
+            public string Category;
+            public string Source;
+            public string Status;
+            public string Message;
+            public double Seconds;
+        }
+
+        private static readonly System.Collections.Generic.List<Finished> Completed =
+            new System.Collections.Generic.List<Finished>();
+
         private static string _state = "idle";
         private static string _runName;
         private static string _test;
@@ -46,6 +60,7 @@ namespace Kobapps.GameTestKit
             _state = "idle";
             _runName = _test = _step = _lastStepStatus = _lastMessage = _runFolder = null;
             _testIndex = _testCount = _stepIndex = _passed = _failed = 0;
+            Completed.Clear();
         }
 
         public static void BeginRun(string runName, int testCount)
@@ -55,6 +70,7 @@ namespace Kobapps.GameTestKit
             _testCount = testCount;
             _testIndex = _stepIndex = _passed = _failed = 0;
             _test = _step = _lastStepStatus = _lastMessage = _runFolder = null;
+            Completed.Clear();
             _startedUtc = DateTime.UtcNow;
             Write();
         }
@@ -82,9 +98,26 @@ namespace Kobapps.GameTestKit
             Write();
         }
 
-        public static void EndTest(bool passed)
+        /// <summary>
+        /// Records a finished test, so a watcher can fill its verdict in while the rest of the batch is
+        /// still running rather than waiting for the report at the end.
+        /// </summary>
+        public static void EndTest(TestRecord record)
         {
-            if (passed) _passed++; else _failed++;
+            if (record == null) return;
+
+            if (record.IsFailure) _failed++; else _passed++;
+
+            Completed.Add(new Finished
+            {
+                Name = record.Name,
+                Category = record.Category ?? "",
+                Source = record.SourcePath ?? "",
+                Status = record.Status.ToString(),
+                Message = record.Message,
+                Seconds = record.DurationSeconds,
+            });
+
             Write();
         }
 
@@ -129,6 +162,17 @@ namespace Kobapps.GameTestKit
                     .Set("failed", _failed)
                     .Set("scene", UnityEngine.SceneManagement.SceneManager.GetActiveScene().name)
                     .Set("runFolder", _runFolder);
+
+                var finished = JsonValue.NewArray();
+                foreach (var one in Completed)
+                    finished.Add(JsonValue.NewObject()
+                        .Set("name", one.Name ?? "")
+                        .Set("category", one.Category ?? "")
+                        .Set("source", one.Source ?? "")
+                        .Set("status", one.Status ?? "")
+                        .Set("message", one.Message ?? "")
+                        .Set("seconds", one.Seconds));
+                json.Set("completed", finished);
 
                 File.WriteAllText(path, json.ToJson());
             }

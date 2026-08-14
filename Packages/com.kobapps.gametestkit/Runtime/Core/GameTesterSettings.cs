@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using UnityEngine;
 
 namespace Kobapps.GameTestKit
@@ -51,6 +53,16 @@ namespace Kobapps.GameTestKit
 
         public List<string> ReportFormats = new List<string> { "junit", "json", "html" };
 
+        [Header("Fixtures")]
+        [Tooltip("Steps run before every test, as a JSON array — e.g. [ { \"call\": \"resetSave\" } ]. "
+                 + "A suite's own beforeEach replaces this.")]
+        [TextArea(2, 8)]
+        public string BeforeEach = "";
+
+        [Tooltip("Steps run after every test, pass or fail. Failures are logged, not fatal.")]
+        [TextArea(2, 8)]
+        public string AfterEach = "";
+
         private static GameTesterSettings _instance;
 
         /// <summary>Loaded settings, or a transient default instance when none exists.</summary>
@@ -71,6 +83,33 @@ namespace Kobapps.GameTestKit
             set => _instance = value;
         }
 
+        /// <summary>
+        /// The settings, or null when they cannot be reached at all.
+        /// </summary>
+        /// <remarks>
+        /// Loading them goes through <c>Resources.Load</c>, which is legal only on Unity's main thread
+        /// and not at all outside the engine — a worker thread parsing a script, or the kit's own logic
+        /// running in a plain test host. Everything that reads settings from a code path a caller did
+        /// not choose should come through here, so an unreachable asset degrades to defaults instead of
+        /// throwing from three layers down.
+        /// <para>
+        /// The engine call sits one frame down on purpose: outside Unity it fails while the runtime is
+        /// <em>preparing</em> the method, which a <c>try</c> in that same method does not catch.
+        /// </para>
+        /// </remarks>
+        public static GameTesterSettings TryGetInstance()
+        {
+            try { return LoadInstance(); }
+            catch (Exception) { return null; }
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static GameTesterSettings LoadInstance() => Instance;
+
+        /// <summary>Options from the settings asset, or plain defaults when it cannot be reached.</summary>
+        public static RunOptions CreateRunOptionsOrDefaults() =>
+            TryGetInstance()?.CreateRunOptions() ?? new RunOptions();
+
         /// <summary>A fresh <see cref="RunOptions"/> pre-filled from these settings.</summary>
         public RunOptions CreateRunOptions()
         {
@@ -89,6 +128,8 @@ namespace Kobapps.GameTestKit
                 CollectPerformance = CollectPerformance,
                 ArtifactRoot = ArtifactRoot,
                 ReportFormats = new List<string>(ReportFormats),
+                BeforeEachJson = BeforeEach ?? "",
+                AfterEachJson = AfterEach ?? "",
             };
         }
     }

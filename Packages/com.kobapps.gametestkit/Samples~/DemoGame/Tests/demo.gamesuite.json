@@ -1,7 +1,12 @@
 {
-  "name": "Demo smoke",
-  "description": "Everything tagged demo, with one retry and screenshots on failure.",
-  "tags": ["demo"],
+  "name": "Demo gameplay",
+  "description": "The four gameplay cases — shop, cards, onboarding — with one retry and screenshots on failure.",
+
+  // One category covers all three folders beneath it: Gameplay/Shop, Gameplay/Cards and
+  // Gameplay/Onboarding. That is the difference between a category and a tag — categories nest, so
+  // this line keeps working when somebody adds Gameplay/Settings tomorrow.
+  "categories": ["Gameplay"],
+
   "options": {
     "retries": 1,
     "stopOnFirstFailure": false,

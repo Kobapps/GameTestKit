@@ -2,6 +2,7 @@
   "name": "Engraving a name",
   "description": "Typing into the shop's input field delivers real text events, character by character.",
   "tags": ["shop", "demo"],
+  "category": "Gameplay/Onboarding",
 
   "setup": [
     { "call": "demo.reset" },

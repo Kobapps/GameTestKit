@@ -2,6 +2,7 @@
   "name": "Buying a sword spends gold",
   "description": "The shop deducts the sword's price and the gold label keeps up with it.",
   "tags": ["smoke", "shop", "demo"],
+  "category": "Gameplay/Shop",
 
   "setup": [
     { "call": "demo.reset" },

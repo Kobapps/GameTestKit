@@ -47,6 +47,7 @@ namespace Kobapps.GameTestKit.Scripting
             {
                 SourcePath = sourcePath,
                 Name = DefaultName(sourcePath),
+                Category = TestCategory.FromSourcePath(sourcePath),
             };
 
             // Shorthand: a bare array of steps is a whole test named after its file.
@@ -60,6 +61,12 @@ namespace Kobapps.GameTestKit.Scripting
                 throw new TestFailureException($"{Describe(sourcePath)} must contain a JSON object or an array of steps.");
 
             if (root.Has("name")) test.Name = root["name"].AsString(test.Name);
+
+            // An explicit category overrides the folder. Worth having for files that cannot be moved
+            // into the folder that describes them — a package sample, or the flattened Resources mirror
+            // that ships inside a player build.
+            if (root.Has("category")) test.Category = TestCategory.Normalize(root["category"].AsString(""));
+
             test.Description = StringOrNull(root["description"]);
             test.Scene = StringOrNull(root["scene"]);
             if (root.Has("timeout")) test.TimeoutSeconds = root["timeout"].AsFloat(test.TimeoutSeconds);
@@ -115,7 +122,7 @@ namespace Kobapps.GameTestKit.Scripting
                 SourcePath = sourcePath,
                 Name = root["name"].AsString(DefaultName(sourcePath)),
                 Description = StringOrNull(root["description"]),
-                Options = ParseOptions(root["options"], GameTesterSettings.Instance.CreateRunOptions()),
+                Options = ParseOptions(root["options"], GameTesterSettings.CreateRunOptionsOrDefaults()),
             };
 
             foreach (var include in root["include"].AsStringList())
@@ -126,6 +133,23 @@ namespace Kobapps.GameTestKit.Scripting
 
             foreach (var tag in root["excludeTags"].AsStringList())
                 if (!string.IsNullOrWhiteSpace(tag)) suite.Options.ExcludeTags.Add(tag.Trim());
+
+            foreach (var category in root["categories"].AsStringList())
+            {
+                var normalized = TestCategory.Normalize(category);
+                if (normalized.Length > 0) suite.Options.Categories.Add(normalized);
+            }
+
+            foreach (var category in root["excludeCategories"].AsStringList())
+            {
+                var normalized = TestCategory.Normalize(category);
+                if (normalized.Length > 0) suite.Options.ExcludeCategories.Add(normalized);
+            }
+
+            // Fixtures at the suite root rather than inside "options": they are the suite's own steps,
+            // and reading them beside "include" is how a person understands what the suite does.
+            if (root.Has("beforeEach")) suite.Options.BeforeEachJson = root["beforeEach"].ToJson(false);
+            if (root.Has("afterEach")) suite.Options.AfterEachJson = root["afterEach"].ToJson(false);
 
             return suite;
         }
@@ -153,6 +177,8 @@ namespace Kobapps.GameTestKit.Scripting
             if (json.Has("screenshotEveryStep")) options.ScreenshotEveryStep = json["screenshotEveryStep"].AsBool();
             if (json.Has("collectPerformance")) options.CollectPerformance = json["collectPerformance"].AsBool();
             if (json.Has("artifactRoot")) options.ArtifactRoot = json["artifactRoot"].AsString("");
+            if (json.Has("beforeEach")) options.BeforeEachJson = json["beforeEach"].ToJson(false);
+            if (json.Has("afterEach")) options.AfterEachJson = json["afterEach"].ToJson(false);
 
             if (json.Has("pointer"))
             {
@@ -212,6 +238,8 @@ namespace Kobapps.GameTestKit.Scripting
                 .Set("screenshotEveryStep", options.ScreenshotEveryStep)
                 .Set("collectPerformance", options.CollectPerformance)
                 .Set("artifactRoot", options.ArtifactRoot ?? "")
+                .Set("beforeEach", Steps(options.BeforeEachJson))
+                .Set("afterEach", Steps(options.AfterEachJson))
                 .Set("pointer", options.Pointer == PointerMode.Touch ? "touch" : "mouse")
                 .Set("backend", options.Backend == InputBackendKind.InputSystem ? "inputSystem"
                     : options.Backend == InputBackendKind.EventSystem ? "eventSystem" : "auto");
@@ -237,6 +265,14 @@ namespace Kobapps.GameTestKit.Scripting
             var tags = JsonValue.NewArray();
             foreach (var tag in options.Tags) tags.Add(JsonValue.New(tag));
             request.Set("tags", tags);
+
+            var categories = JsonValue.NewArray();
+            foreach (var category in options.Categories) categories.Add(JsonValue.New(category));
+            request.Set("categories", categories);
+
+            var excludeCategories = JsonValue.NewArray();
+            foreach (var category in options.ExcludeCategories) excludeCategories.Add(JsonValue.New(category));
+            request.Set("excludeCategories", excludeCategories);
 
             var paths = JsonValue.NewArray();
             foreach (var path in options.Paths) paths.Add(JsonValue.New(path));
@@ -269,6 +305,59 @@ namespace Kobapps.GameTestKit.Scripting
         // ---------------------------------------------------------------- helpers
 
         private static string StringOrNull(JsonValue value) => value.IsNull ? null : value.AsString();
+
+        /// <summary>
+        /// A stored fixture back as JSON. Fixtures travel as text, so writing them into the run request
+        /// means re-parsing them rather than quoting them into a string field.
+        /// </summary>
+        private static JsonValue Steps(string json)
+        {
+            if (string.IsNullOrWhiteSpace(json)) return JsonValue.NewArray();
+
+            try
+            {
+                var parsed = JsonValue.Parse(json);
+                return parsed.IsArray ? parsed : JsonValue.NewArray();
+            }
+            catch (JsonParseException)
+            {
+                // Reported properly when the runner parses it; silently dropping it here would hide it.
+                return JsonValue.NewArray();
+            }
+        }
+
+        /// <summary>
+        /// Parses a fixture into steps. Returns an empty list for an empty fixture, and throws with the
+        /// fixture named when it does not parse.
+        /// </summary>
+        public static List<TestStep> ParseFixture(string json, string what)
+        {
+            var steps = new List<TestStep>();
+            if (string.IsNullOrWhiteSpace(json)) return steps;
+
+            JsonValue root;
+            try { root = JsonValue.Parse(json); }
+            catch (JsonParseException e)
+            {
+                throw new TestFailureException($"The {what} fixture is not valid JSON: {e.Message}");
+            }
+
+            if (!root.IsArray)
+                throw new TestFailureException($"The {what} fixture must be an array of steps.");
+
+            int index = 0;
+            foreach (var item in root)
+            {
+                try { steps.Add(StepRegistry.Create(item)); }
+                catch (TestFailureException e)
+                {
+                    throw new TestFailureException($"The {what} fixture, step #{index + 1}: {e.Message}");
+                }
+                index++;
+            }
+
+            return steps;
+        }
 
         /// <summary>Derives a readable test name from a file path, e.g. <c>buy-a-sword.gametest.json</c> → "buy a sword".</summary>
         public static string DefaultName(string sourcePath)

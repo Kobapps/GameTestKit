@@ -10,6 +10,7 @@ game registers — run `Tools ▸ GameTestKit ▸ Print Step Catalogue`, or inst
   "name": "Buying a sword spends gold",
   "description": "Why this flow matters.",
   "tags": ["smoke", "shop"],
+  "category": "Shop/Checkout",
 
   "scene": "Shop",
   "timeout": 120,
@@ -28,6 +29,7 @@ game registers — run `Tools ▸ GameTestKit ▸ Print Step Catalogue`, or inst
 |---|---|
 | `name` | Used for filtering, reporting and artifact folders. Defaults to the file name. |
 | `tags` | Suite membership. Matching is case-insensitive. |
+| `category` | Where the test sits in the suite. Defaults to the folder it is in — see below. |
 | `scene` | Loaded before `setup`. Omit to test whatever is already open. |
 | `timeout` | Wall-clock budget for the whole test, in unscaled seconds. |
 | `repeat` | Runs `steps` this many times inside one test — soak and flake hunting. |
@@ -38,6 +40,35 @@ A bare array of steps is also a valid file; the name then comes from the file na
 (`buy-a-sword.gametest.json` → "buy a sword").
 
 `//` and `/* */` comments and trailing commas are accepted. Parse errors report line and column.
+
+## Categories
+
+A category is the folder a script lives in, relative to your tests folder. Nothing to declare:
+
+```
+Assets/GameTests/
+  smoke.gametest.json           → no category
+  Shop/
+    buy-a-sword.gametest.json   → "Shop"
+    Checkout/
+      pay.gametest.json         → "Shop/Checkout"
+```
+
+Categories nest, so filtering on `Shop` also runs `Shop/Checkout`. They are how a suite stays
+navigable once it outgrows one screen: the GameTester window groups by them, the HTML report gets a
+heading per category, and the JUnit `classname` becomes `GameTestKit.Shop.Checkout` — which is what
+CI dashboards group and trend by.
+
+**Categories vs. tags.** A test lives in exactly one category and carries any number of tags. Use
+categories for structure that mirrors the game (`Shop`, `Onboarding`, `Combat/Bosses`) and tags for
+sets that cut across it (`smoke`, `nightly`, `flaky`). They filter independently: asking for category
+`Shop` *and* tag `smoke` runs the smoke tests in the shop.
+
+Set `"category"` explicitly only when the folder cannot say it — a package sample, or a script
+mirrored into `Resources` for a player build. An explicit value always wins over the folder.
+
+Move a test between categories by moving the file. The GameTester window will do it for you:
+right-click a test ▸ **Move to**, or use the category button in the detail pane.
 
 ### Phases
 
@@ -174,6 +205,38 @@ Selectors inside expressions must be quoted: `visible('id:shop_panel')`.
 player.gold >= 100 and visible('id:shop_panel') and not blocked('id:buy')
 ```
 
+## Events — testing what the game sends
+
+Assertions about analytics, server calls, IAP receipts, ad callbacks — anything the game emits. The
+game feeds `TestEventLog` with one line; see [events.md](events.md) for the whole story.
+
+| Verb | Meaning |
+|---|---|
+| `{"eventCase": "Level_End", "case": "win"}` | Opens a case: marks the window, names the event being proved. `companions` lists what else may appear. |
+| `{"waitForEvent": "Session_Start"}` | Waits until it has fired. Replaces sleeping for long enough. |
+| `{"expectEvent": "Level_End", "count": 1, "props": {…}}` | Waits for it, then asserts payload, count and reach. |
+| `{"expectNoEvent": "legacy_level_end"}` | Asserts it did not fire. |
+| `{"expectOrder": ["Level_Start", "Level_End"]}` | Asserts an order, ignoring what came between. |
+| `{"expectOnlyExpectedEvents": true}` | Fails on anything the case did not declare. |
+| `{"eventInvariants": true, "pairs": [["Level_Start","Level_End"]], "sequenceProperty": "Event_Number"}` | Sequence gaps, unbalanced pairs, duplicate sends, required properties. |
+| `{"eventProof": true}` | Closes the case and writes its proof beside the report. |
+
+`expectEvent` also takes `within` (seconds, default 10), `index` (`first` or `last`),
+`delivered`/`notDelivered` (sink names) and `screenshot`.
+
+Each value in `props` is a matcher:
+
+| Matcher | Means |
+|---|---|
+| `1`, `"Win"`, `true` | equality — strings case-insensitively, numbers within an epsilon |
+| `"*"` | present and non-null |
+| `"!"` | absent or null |
+| `">0"` `">=1"` `"<10"` `"<=3"` `"!=0"` | numeric bound |
+| `"~^Level_"` | regex |
+| `["Win","Fail"]` | one of |
+| `"type:number"` | `number`, `string`, `bool`, `list` |
+| `"@const:My.Telemetry.RESULT_*"` | one of the constants that class declares |
+
 ## Suites — `.gamesuite.json`
 
 ```json
@@ -182,7 +245,11 @@ player.gold >= 100 and visible('id:shop_panel') and not blocked('id:buy')
   "description": "Must pass before anything ships.",
   "tags": ["smoke"],
   "excludeTags": ["nightly"],
+  "categories": ["Shop", "Onboarding"],
+  "excludeCategories": ["Shop/Experimental"],
   "include": ["Assets/GameTests/checkout"],
+  "beforeEach": [ { "call": "resetSave" } ],
+  "afterEach":  [ { "call": "closeAllPopups" } ],
   "options": {
     "retries": 1,
     "repeat": 1,
@@ -210,6 +277,16 @@ player.gold >= 100 and visible('id:shop_panel') and not blocked('id:buy')
 
 `pointer` is `mouse` or `touch`; `backend` is `auto`, `inputSystem` or `eventSystem`. `seed` of 0
 picks a fresh seed and reports it, so a failure found by `shuffle` can be reproduced exactly.
+
+`categories` and `excludeCategories` include nested categories, so `"Shop"` covers `Shop/Checkout`
+and excluding `Shop/Experimental` removes everything under it. Categories and tags are ANDed: a suite
+naming both runs the tests that satisfy both.
+
+`beforeEach` runs before every test's own `setup` and `afterEach` after its `teardown`, so the reset
+a suite needs is written once rather than copied into every case. A `beforeEach` failure is reported
+as an *error* — the test never ran — while an `afterEach` failure is logged and not fatal, as with
+`teardown`. `GameTesterSettings ▸ Fixtures` declares the same thing project-wide, which is what
+applies to runs started from the GameTester window.
 
 ## The input overlay
 

@@ -38,7 +38,14 @@ the same snapshot and copies a readable version to the clipboard.
 
 ## 3. Write the script
 
-Create `Assets/GameTests/<kebab-case-name>.gametest.json`:
+Create `Assets/GameTests/<Category>/<kebab-case-name>.gametest.json`.
+
+**File it in the right folder.** The folder under `Assets/GameTests/` is the test's *category*, which
+is how the suite stays navigable — `Shop/buy-a-sword.gametest.json` is in category `Shop`, and
+`Shop/Checkout/pay.gametest.json` is in `Shop/Checkout`. The reference at the bottom of this document
+lists the categories this project already uses: reuse one of those rather than inventing a sibling
+that means the same thing. Create a new folder only for a genuinely new area of the game. Do not set
+a `"category"` field — the folder already says it.
 
 ```json
 {
@@ -74,8 +81,23 @@ Rules that matter:
   error (the test never got to run); a failure in `steps` is a real test failure. `teardown` always
   runs, even after a failure.
 - **Never use `wait` to synchronise.** `{"wait": 2}` is a guess that is either too slow or too short
-  on someone else's machine. Use `waitForVisible`, `waitForGone`, `waitForScene` or `waitFor` with an
-  expression. Use `wait` only to model a deliberate human pause.
+  on someone else's machine. Use `waitForVisible`, `waitForGone`, `waitForScene`, `waitForEvent`, or
+  `waitFor` with an expression. Use `wait` only to model a deliberate human pause.
+- **To test analytics, assert on the event, not on the screen.** If the reference below lists
+  `expectEvent`, this game feeds `TestEventLog` and its telemetry is directly assertable:
+
+  ```json
+  { "eventCase": "Level_End", "case": "win" },
+  { "expectEvent": "Level_End", "count": 1,
+    "props": { "Result": "Win", "Duration": ">0", "Debug_Flag": "!" },
+    "delivered": ["Mixpanel"] },
+  { "eventProof": true }
+  ```
+
+  Pin `count` — an event that fires twice silently doubles the metric it feeds, and a check that only
+  asks whether it fired cannot see that. Prefer `"@const:Type.PREFIX_*"` over copying a literal
+  value: it asserts against the vocabulary the game declares, so a rename fails the test instead of
+  passing quietly. Use `">0"` rather than `"*"` for durations and counts.
 - **Assert what the player sees and what the game holds.** A flow that clicks through without
   assertions proves only that nothing threw.
 - Comments (`//`) and trailing commas are allowed — this parser tolerates both.

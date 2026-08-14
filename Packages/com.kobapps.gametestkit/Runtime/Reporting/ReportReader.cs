@@ -41,6 +41,7 @@ namespace Kobapps.GameTestKit
                     Name = item["name"].AsString(""),
                     Description = item["description"].AsString(null),
                     SourcePath = item["source"].AsString(null),
+                    Category = item["category"].AsString("") ?? "",
                     Status = ParseTestStatus(item["status"].AsString("")),
                     Message = item["message"].AsString(null),
                     StackTrace = item["stackTrace"].AsString(null),

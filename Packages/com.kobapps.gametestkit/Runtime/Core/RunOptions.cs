@@ -34,6 +34,15 @@ namespace Kobapps.GameTestKit
         /// <summary>Tests carrying any of these tags are skipped.</summary>
         public List<string> ExcludeTags = new List<string>();
 
+        /// <summary>
+        /// Only run tests in these categories. A parent includes everything under it, so
+        /// <c>Shop</c> also runs <c>Shop/Checkout</c>. Empty means every category.
+        /// </summary>
+        public List<string> Categories = new List<string>();
+
+        /// <summary>Tests in these categories (or nested under them) are skipped.</summary>
+        public List<string> ExcludeCategories = new List<string>();
+
         /// <summary>Explicit script paths to run. When non-empty, discovery is skipped.</summary>
         public List<string> Paths = new List<string>();
 
@@ -106,6 +115,25 @@ namespace Kobapps.GameTestKit
         /// <summary>Quit the player/editor when the run finishes (CI).</summary>
         public bool QuitWhenDone;
 
+        /// <summary>
+        /// Steps run before every test in the batch, as the JSON array a suite or the settings asset
+        /// declares them in. Empty for none.
+        /// </summary>
+        /// <remarks>
+        /// Held as text rather than as parsed <see cref="TestStep"/>s because these options are
+        /// serialised to a file and handed to play mode across a domain reload, and steps are authored
+        /// as JSON anyway. The runner parses them once, at the start of the run, so a broken fixture is
+        /// one error rather than one per test.
+        /// <para>
+        /// A failure here is reported like a failed <c>setup</c> — an error, not a failure. The test
+        /// never got to run, and calling that a product bug wastes somebody's morning.
+        /// </para>
+        /// </remarks>
+        public string BeforeEachJson = "";
+
+        /// <summary>Steps run after every test, pass or fail. Failures are logged, not fatal — as with teardown.</summary>
+        public string AfterEachJson = "";
+
         public RunOptions Clone()
         {
             return new RunOptions
@@ -113,6 +141,8 @@ namespace Kobapps.GameTestKit
                 NameFilter = NameFilter,
                 Tags = new List<string>(Tags),
                 ExcludeTags = new List<string>(ExcludeTags),
+                Categories = new List<string>(Categories),
+                ExcludeCategories = new List<string>(ExcludeCategories),
                 Paths = new List<string>(Paths),
                 RunRepeat = RunRepeat,
                 Retries = Retries,
@@ -135,6 +165,8 @@ namespace Kobapps.GameTestKit
                 ArtifactRoot = ArtifactRoot,
                 ReportFormats = new List<string>(ReportFormats),
                 QuitWhenDone = QuitWhenDone,
+                BeforeEachJson = BeforeEachJson,
+                AfterEachJson = AfterEachJson,
             };
         }
 
@@ -150,6 +182,20 @@ namespace Kobapps.GameTestKit
             if (ExcludeTags != null)
                 for (int i = 0; i < ExcludeTags.Count; i++)
                     if (test.HasTag(ExcludeTags[i])) return false;
+
+            if (ExcludeCategories != null)
+                for (int i = 0; i < ExcludeCategories.Count; i++)
+                    if (test.IsInCategory(ExcludeCategories[i])) return false;
+
+            // Categories and tags are separate axes, so both have to say yes: "the Shop folder" and
+            // "tagged smoke" together means the smoke tests in Shop, not their union.
+            if (Categories != null && Categories.Count > 0)
+            {
+                bool inAny = false;
+                for (int i = 0; i < Categories.Count && !inAny; i++)
+                    inAny = test.IsInCategory(Categories[i]);
+                if (!inAny) return false;
+            }
 
             if (Tags != null && Tags.Count > 0)
             {

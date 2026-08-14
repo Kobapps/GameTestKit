@@ -1,0 +1,35 @@
+{
+  "name": "Demo analytics",
+  "description": "The four analytics cases, each playing the demo into the state that produces one event and then asserting what went on the wire.\n\nRun it from the Editor rather than -batchmode: screenshots are skipped in batch mode, and a proof record without the frame that produced the event is half a proof.",
+
+  "categories": ["Analytics"],
+
+  // Fixtures are for state that cuts across cases and that no single test should have to know
+  // about. Consent is the example: only one case here touches it, and every other case would be
+  // wrong — silently, by asserting delivery that did not happen — if that one leaked.
+  //
+  // What is NOT here is demo.reset/demo.start. Each test does that in its own setup, because a
+  // sample has to work when someone runs it on its own from the GameTester window, where no suite
+  // is involved and no fixture runs.
+  //
+  // beforeEach runs before each test's own setup; a failure there is reported as an error, since
+  // the test never ran. afterEach always runs and its failures are logged rather than fatal.
+  "beforeEach": [
+    { "call": "demo.setConsent", "args": [true] }
+  ],
+
+  "afterEach": [
+    { "call": "demo.setConsent", "args": [true] },
+    { "call": "demo.reset" }
+  ],
+
+  "options": {
+    "retries": 0,
+    "stopOnFirstFailure": false,
+    "screenshotOnFailure": true,
+
+    // An analytics provider that throws is usually swallowed by the hub, so the console line is
+    // sometimes the only trace it left.
+    "failOnLogError": true
+  }
+}

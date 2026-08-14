@@ -118,6 +118,85 @@ A test is a JSON object. The **key is the verb**; the rest of the object are its
 
 A bare array of steps is also a valid file — the name comes from the filename.
 
+### Categories — keeping a big suite navigable
+
+Put a script in a folder and that folder is its category. Nothing to declare, nothing to keep in
+sync:
+
+```
+Assets/GameTests/
+  smoke.gametest.json           → no category
+  Shop/
+    buy-a-sword.gametest.json   → "Shop"
+    Checkout/
+      pay.gametest.json         → "Shop/Checkout"
+```
+
+Categories nest, so anything aimed at `Shop` also covers `Shop/Checkout`. They show up everywhere a
+long list used to: the GameTester window groups and folds by them and can run one with a click, the
+HTML report gets a heading per category, the JUnit `classname` becomes `GameTestKit.Shop.Checkout`
+so CI dashboards group correctly, and `-gtk-categories Shop` shards a CI matrix along the folders you
+already have.
+
+Move a test by moving the file — or let the window do it: right-click a test ▸ **Move to**, or use
+the category button in the detail pane. **Categories ▾** in the list toolbar creates one.
+
+Categories and tags answer different questions and filter independently. A test sits in exactly one
+category and carries any number of tags: categories mirror the game's structure (`Shop`,
+`Combat/Bosses`), tags mark sets that cut across it (`smoke`, `nightly`). Asking for both runs the
+tests that satisfy both.
+
+Set `"category": "Shop"` in the file only when the folder cannot say it — an imported package sample,
+or a script mirrored into `Resources` for a player build. An explicit value always wins.
+
+### Testing what the game emits — analytics and friends
+
+The rest of the kit asserts what the game *shows*. These verbs assert what it **sends**: analytics
+events, server calls, IAP receipts, ad callbacks, save writes — all the same shape, so the kit says
+*event* rather than *analytics*.
+
+This matters because telemetry breaks silently. A broken button gets a bug report the same day; an
+event that starts sending `"win"` where it sent `"Win"` gets noticed by an analyst three weeks later
+wondering why win rate fell off a cliff.
+
+Give the kit one line wherever your event bus already reports:
+
+```csharp
+[RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+private static void Install() =>
+    AnalyticsHub.Recorded += e => TestEventLog.Record(e.EventName, e.Properties);
+```
+
+Then assert on it:
+
+```json
+{ "eventCase": "Level_End", "case": "win" },
+{ "playLevel": "intuitive" },
+{ "expectEvent": "Level_End",
+  "count": 1,
+  "props": {
+    "Level_Result": "@const:My.Telemetry.RESULT_*",
+    "Duration":     ">0",
+    "Fail_Reason":  "None",
+    "Debug_Flag":   "!"
+  },
+  "delivered":    ["Mixpanel"],
+  "notDelivered": ["Singular"] },
+{ "expectOrder": ["Level_Start", "Level_End"] },
+{ "eventProof": true }
+```
+
+`"count": 1` catches the attempt that closes twice and silently doubles your win rate — invisible to
+any check that only asks whether the event fired. `"@const:"` asserts against the vocabulary your
+game declares rather than a copied literal, so renaming the constant fails the test instead of
+quietly passing it. `eventInvariants` adds the session-wide checks no single payload can reveal:
+sequence gaps, unbalanced `Level_Start`/`Level_End` pairs, duplicate sends.
+
+`eventProof` writes the evidence — the payload in full, per-property verdicts, which sinks took it,
+and the screenshot of the moment — beside the report and into it.
+
+Full reference: [Documentation~/events.md](Documentation~/events.md).
+
 ### The steps
 
 | | |
@@ -238,11 +317,28 @@ The verb is now usable in JSON, appears in the catalogue, and is documented in t
 
 ## Running
 
-**In the Editor** — `Tools ▸ GameTestKit ▸ GameTester`. A **Tests** page lists everything
-discovered with its last result beside it and the selected test's steps in the detail pane; a
-**Results** page expands each test into its steps, messages and screenshots; an **Options** page sets
-pointer mode, backend, input speed, retries, shuffle and screenshot policy for runs started here.
-Turn input speed up to watch a test drive the game in slow motion.
+**In the Editor** — `Tools ▸ GameTestKit ▸ GameTester`. A **Tests** page lists everything discovered
+as a folding tree of categories, each row carrying its last verdict — ✓, ✗, or ○ for not yet run —
+and each category header carrying the verdict of everything underneath it, so a folded group is still
+readable. **▶** on any row runs that test or that whole category. A **Results** page expands each
+test into its steps, messages and screenshots; an **Options** page sets pointer mode, backend, input
+speed, retries, shuffle and screenshot policy for runs started here. Turn input speed up to watch a
+test drive the game in slow motion.
+
+Right-clicking a test offers **Select script in Project**, **Open script**, **Move to** another
+category, and **Delete script** — the delete moves the file to the recycle bin after naming what it
+is about to remove, so a mis-click is recoverable. The same three are buttons in the inspector.
+
+Selecting a test opens its inspector beside the list, in two tabs:
+
+- **Overview** — steps, scene, tags, timeout, the category (with the button that moves it), and the
+  last result with its failure message and screenshots.
+- **Script** — the `.gametest.json` itself, edited in place, with completions generated from the live
+  step registry and your game's own bindings, parse errors marked as you type, **Format**, and
+  **▶ Run this**. Unsaved edits survive switching tabs, and switching to another test asks before
+  leaving them behind.
+
+The list is the file picker: there is no separate editor page to keep in sync with it.
 
 **Watching the input** — the on-screen overlay is on by default: a yellow ring follows the simulated
 pointer, a ripple marks every tap, drags draw their path, and a caption strip in the corner shows the
@@ -262,13 +358,14 @@ rather than leaving you guessing when a step stops progressing.
 ```bash
 Unity -batchmode -projectPath . \
       -executeMethod Kobapps.GameTestKit.Editor.GameTesterCLI.Run \
-      -gtk-tags smoke -gtk-report Artifacts/gametests -gtk-stop-on-failure
+      -gtk-categories Shop -gtk-tags smoke -gtk-report Artifacts/gametests -gtk-stop-on-failure
 ```
 
 Do **not** pass `-quit`: the run needs play mode, which outlives the `-executeMethod` call. The
 process exits by itself with 0 (passed), 1 (failures) or 2 (the run could not complete).
 
 Flags: `-gtk-test <path>`, `-gtk-filter <substring>`, `-gtk-tags a,b`, `-gtk-exclude-tags a`,
+`-gtk-categories a,b`, `-gtk-exclude-categories a`,
 `-gtk-suite <path>`, `-gtk-retries N`, `-gtk-repeat N`, `-gtk-shuffle`, `-gtk-seed N`,
 `-gtk-pointer touch`, `-gtk-backend inputSystem`, `-gtk-speed N`, `-gtk-timescale N`,
 `-gtk-screenshot-every-step`, `-gtk-allow-log-errors`, `-gtk-isolate-devices`, `-gtk-no-overlay`,

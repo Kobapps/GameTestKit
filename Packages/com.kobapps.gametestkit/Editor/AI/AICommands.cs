@@ -98,6 +98,16 @@ namespace Kobapps.GameTestKit.Editor
                     scenes.Add(JsonValue.New(Path.GetFileNameWithoutExtension(scene.path)));
             root.Set("buildScenes", scenes);
 
+            // The categories already in use, so an agent files a new test beside its siblings instead
+            // of inventing "Store" next to the "Shop" everyone else uses.
+            var categories = JsonValue.NewArray();
+            foreach (var category in GameTestCatalog.DiscoverCategories(EditorTestCatalog.LoadAll(out _)))
+                categories.Add(JsonValue.New(category));
+            root.Set("categories", categories);
+            root.Set("categoriesNote",
+                "A test's category is the folder it sits in, relative to the configured tests folder. "
+                + "Create the file under the matching folder rather than setting a \"category\" field.");
+
             return root;
         }
 

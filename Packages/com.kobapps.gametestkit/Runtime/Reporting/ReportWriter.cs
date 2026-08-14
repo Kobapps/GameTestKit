@@ -88,7 +88,7 @@ namespace Kobapps.GameTestKit
 
             foreach (var test in report.Tests)
             {
-                xml.AppendLine($"    <testcase classname=\"{Escape(report.Suite)}\" name=\"{Escape(test.Name)}\" " +
+                xml.AppendLine($"    <testcase classname=\"{Escape(ClassName(report, test))}\" name=\"{Escape(test.Name)}\" " +
                                $"time=\"{Number(test.DurationSeconds)}\">");
 
                 switch (test.Status)
@@ -123,6 +123,18 @@ namespace Kobapps.GameTestKit
             xml.AppendLine("  </testsuite>");
             xml.AppendLine("</testsuites>");
             return xml.ToString();
+        }
+
+        /// <summary>
+        /// The JUnit <c>classname</c>, which is what every CI dashboard groups and trends by — so the
+        /// category belongs in it: <c>GameTestKit.Shop.Checkout</c>.
+        /// </summary>
+        private static string ClassName(RunReport report, TestRecord test)
+        {
+            var category = TestCategory.Normalize(test.Category);
+            return category.Length == 0
+                ? report.Suite
+                : $"{report.Suite}.{category.Replace(TestCategory.Separator, '.')}";
         }
 
         private static string Detail(TestRecord test)
@@ -183,6 +195,25 @@ namespace Kobapps.GameTestKit
                 .Set("timedOut", report.TimedOut)
                 .Set("skipped", report.Skipped));
 
+            // Per-category totals, so a dashboard can say "Shop is red" without walking every test.
+            var categories = JsonValue.NewArray();
+            foreach (var group in GroupByCategory(report.Tests))
+            {
+                int passed = 0, failed = 0;
+                foreach (var test in group.Value)
+                {
+                    if (test.Status == TestStatus.Passed) passed++;
+                    else if (test.IsFailure) failed++;
+                }
+
+                categories.Add(JsonValue.NewObject()
+                    .Set("category", group.Key)
+                    .Set("total", group.Value.Count)
+                    .Set("passed", passed)
+                    .Set("failed", failed));
+            }
+            root.Set("categories", categories);
+
             var tests = JsonValue.NewArray();
             foreach (var test in report.Tests)
             {
@@ -192,6 +223,7 @@ namespace Kobapps.GameTestKit
                     .Set("durationSeconds", test.DurationSeconds)
                     .Set("attempt", test.Attempt);
 
+                if (!string.IsNullOrEmpty(test.Category)) item.Set("category", test.Category);
                 if (!string.IsNullOrEmpty(test.Description)) item.Set("description", test.Description);
                 if (!string.IsNullOrEmpty(test.SourcePath)) item.Set("source", test.SourcePath);
                 if (!string.IsNullOrEmpty(test.Message)) item.Set("message", test.Message);
@@ -225,6 +257,13 @@ namespace Kobapps.GameTestKit
                 }
                 if (errors.Count > 0) item.Set("logErrors", errors);
 
+                if (test.EventProofs.Count > 0)
+                {
+                    var proofs = JsonValue.NewArray();
+                    foreach (var proof in test.EventProofs) proofs.Add(proof.ToJson());
+                    item.Set("eventProofs", proofs);
+                }
+
                 if (test.Performance != null)
                 {
                     item.Set("performance", JsonValue.NewObject()
@@ -241,6 +280,37 @@ namespace Kobapps.GameTestKit
 
             root.Set("tests", tests);
             return root;
+        }
+
+        /// <summary>
+        /// The tests grouped by category, in tree order, keeping each group's original order.
+        /// </summary>
+        private static List<KeyValuePair<string, List<TestRecord>>> GroupByCategory(List<TestRecord> tests)
+        {
+            var groups = new Dictionary<string, List<TestRecord>>(StringComparer.OrdinalIgnoreCase);
+            var order = new List<string>();
+
+            foreach (var test in tests)
+            {
+                var category = TestCategory.Normalize(test.Category);
+
+                if (!groups.TryGetValue(category, out var bucket))
+                {
+                    bucket = new List<TestRecord>();
+                    groups[category] = bucket;
+                    order.Add(category);
+                }
+
+                bucket.Add(test);
+            }
+
+            order.Sort(TestCategory.Compare);
+
+            var result = new List<KeyValuePair<string, List<TestRecord>>>(order.Count);
+            foreach (var category in order)
+                result.Add(new KeyValuePair<string, List<TestRecord>>(category, groups[category]));
+
+            return result;
         }
 
         private static JsonValue StepsToJson(List<StepRecord> steps)
@@ -302,6 +372,23 @@ li.failed{color:#e5484d;font-weight:600}
 li.skipped{opacity:.5}
 img.shot{max-width:520px;border-radius:8px;border:1px solid rgba(128,128,128,.3);display:block;margin:8px 0}
 code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+h2.cat{font-size:13px;text-transform:uppercase;letter-spacing:.06em;opacity:.6;margin:22px 0 8px;
+  padding-bottom:6px;border-bottom:1px solid rgba(128,128,128,.25);display:flex;gap:8px;align-items:baseline}
+h2.cat .n{font-weight:400;letter-spacing:0;text-transform:none;margin-left:auto;font-size:12px}
+h2.cat.bad{color:#e5484d;opacity:1}
+.proof{border:1px solid rgba(128,128,128,.3);border-radius:8px;margin:10px 0;overflow:hidden}
+.proof>.h{padding:8px 12px;font-weight:600;display:flex;gap:8px;align-items:center;background:rgba(128,128,128,.08)}
+.proof .verdict{margin-left:auto;font-weight:400;font-size:12px;opacity:.75}
+.proof.ok>.h{border-left:4px solid #12a150}.proof.bad>.h{border-left:4px solid #e5484d}
+table.props{border-collapse:collapse;width:100%;font-size:12px}
+table.props td,table.props th{padding:4px 12px;text-align:left;border-top:1px solid rgba(128,128,128,.18)}
+table.props th{opacity:.6;font-weight:500}
+table.props td.k{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+tr.miss td{background:rgba(229,72,77,.1)}
+tr.miss td.k{color:#e5484d;font-weight:600}
+.sinks{padding:6px 12px;font-size:12px;display:flex;gap:6px;flex-wrap:wrap}
+.sink{padding:2px 8px;border-radius:999px;background:#12a150;color:#fff}
+.sink.no{background:#8b8f98}
 </style></head><body>");
 
             html.AppendLine($"<h1>{Html(report.Suite)}</h1>");
@@ -317,36 +404,141 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
             if (report.Skipped > 0) html.AppendLine($"<span class=\"pill warn\">{report.Skipped} skipped</span>");
             html.AppendLine("</div>");
 
-            foreach (var test in report.Tests)
+            var groups = GroupByCategory(report.Tests);
+
+            foreach (var group in groups)
             {
-                var status = test.Status.ToString().ToLowerInvariant();
-                html.AppendLine($"<details class=\"test\" data-status=\"{status}\"{(test.IsFailure ? " open" : "")}>");
-                html.AppendLine($"<summary>{Html(test.Name)}<span class=\"dur\">{status} · {test.DurationSeconds:0.00}s" +
-                                $"{(test.Attempt > 1 ? $" · attempt {test.Attempt}" : "")}</span></summary>");
-                html.AppendLine("<div class=\"body\">");
+                // One flat list stays flat: a heading per category only earns its space once the suite
+                // actually has more than one.
+                if (groups.Count > 1)
+                {
+                    int failed = 0;
+                    foreach (var test in group.Value) if (test.IsFailure) failed++;
 
-                if (!string.IsNullOrEmpty(test.Description))
-                    html.AppendLine($"<p>{Html(test.Description)}</p>");
+                    html.AppendLine($"<h2 class=\"cat{(failed > 0 ? " bad" : "")}\">{Html(TestCategory.Display(group.Key))}" +
+                                    $"<span class=\"n\">{group.Value.Count} test{(group.Value.Count == 1 ? "" : "s")}" +
+                                    $"{(failed > 0 ? $" · {failed} failing" : "")}</span></h2>");
+                }
 
-                if (!string.IsNullOrEmpty(test.Message))
-                    html.AppendLine($"<div class=\"msg\">{Html(test.Message)}</div>");
-
-                html.AppendLine("<ol class=\"steps\">");
-                AppendSteps(html, test.Steps);
-                html.AppendLine("</ol>");
-
-                foreach (var artifact in test.Artifacts)
-                    html.AppendLine($"<img class=\"shot\" src=\"{Html(RelativeArtifact(artifact))}\" alt=\"failure screenshot\">");
-
-                if (test.Performance != null)
-                    html.AppendLine($"<p><code>avg {test.Performance.AverageFps:0} fps · worst frame " +
-                                    $"{test.Performance.WorstFrameMs:0.0} ms · p95 {test.Performance.Percentile95FrameMs:0.0} ms</code></p>");
-
-                html.AppendLine("</div></details>");
+                foreach (var test in group.Value) AppendTest(html, test);
             }
 
             html.AppendLine("</body></html>");
             return html.ToString();
+        }
+
+        private static void AppendTest(StringBuilder html, TestRecord test)
+        {
+            var status = test.Status.ToString().ToLowerInvariant();
+            html.AppendLine($"<details class=\"test\" data-status=\"{status}\"{(test.IsFailure ? " open" : "")}>");
+            html.AppendLine($"<summary>{Html(test.Name)}<span class=\"dur\">{status} · {test.DurationSeconds:0.00}s" +
+                            $"{(test.Attempt > 1 ? $" · attempt {test.Attempt}" : "")}</span></summary>");
+            html.AppendLine("<div class=\"body\">");
+
+            if (!string.IsNullOrEmpty(test.Description))
+                html.AppendLine($"<p>{Html(test.Description)}</p>");
+
+            if (!string.IsNullOrEmpty(test.Message))
+                html.AppendLine($"<div class=\"msg\">{Html(test.Message)}</div>");
+
+            foreach (var proof in test.EventProofs) AppendProof(html, proof);
+
+            html.AppendLine("<ol class=\"steps\">");
+            AppendSteps(html, test.Steps);
+            html.AppendLine("</ol>");
+
+            foreach (var artifact in test.Artifacts)
+                html.AppendLine($"<img class=\"shot\" src=\"{Html(RelativeArtifact(artifact))}\" alt=\"failure screenshot\">");
+
+            if (test.Performance != null)
+                html.AppendLine($"<p><code>avg {test.Performance.AverageFps:0} fps · worst frame " +
+                                $"{test.Performance.WorstFrameMs:0.0} ms · p95 {test.Performance.Percentile95FrameMs:0.0} ms</code></p>");
+
+            html.AppendLine("</div></details>");
+        }
+
+        /// <summary>
+        /// One event proof: the payload that actually went, per-property verdicts, and which sinks took
+        /// it.
+        /// </summary>
+        /// <remarks>
+        /// The whole point of a proof case is that a reviewer can read what the wire carried without
+        /// running anything, so the payload is rendered in full — not only the properties that failed.
+        /// A property nobody asserted is exactly where an unnoticed regression lives.
+        /// </remarks>
+        private static void AppendProof(StringBuilder html, EventProofCase proof)
+        {
+            var title = string.IsNullOrEmpty(proof.Variant) ? proof.Subject : $"{proof.Subject} · {proof.Variant}";
+
+            html.AppendLine($"<div class=\"proof {(proof.Passed ? "ok" : "bad")}\">");
+            html.AppendLine($"<div class=\"h\">{Html(title)}" +
+                            $"<span class=\"verdict\">{proof.Verdict}</span></div>");
+
+            if (proof.Proof == null)
+            {
+                html.AppendLine("<div class=\"sinks\">the event never fired, so there is no payload to show</div>");
+                AppendProofFailures(html, proof);
+                html.AppendLine("</div>");
+                return;
+            }
+
+            // Verdicts are keyed by property so the payload can be shown whole, with the checked ones
+            // marked in place rather than listed separately.
+            var verdicts = new Dictionary<string, EventPropertyMatch>(StringComparer.OrdinalIgnoreCase);
+            foreach (var expectation in proof.Expectations)
+                foreach (var match in expectation.Properties)
+                    verdicts[match.Key] = match;
+
+            html.AppendLine("<table class=\"props\"><tr><th>property</th><th>value</th><th>expected</th></tr>");
+
+            foreach (var pair in proof.Proof.Properties)
+            {
+                verdicts.TryGetValue(pair.Key, out var verdict);
+                bool bad = verdict != null && !verdict.Passed;
+
+                html.AppendLine($"<tr class=\"{(bad ? "miss" : "")}\">" +
+                                $"<td class=\"k\">{Html(pair.Key)}</td>" +
+                                $"<td>{Html(EventPropertyMatcher.Describe(pair.Value))}</td>" +
+                                $"<td>{Html(verdict?.Expected ?? "")}{(bad ? $" — {Html(verdict.Reason)}" : "")}</td></tr>");
+            }
+
+            // A property that was expected and never arrived has no row of its own above.
+            foreach (var pair in verdicts)
+            {
+                if (proof.Proof.Properties.ContainsKey(pair.Key)) continue;
+
+                html.AppendLine($"<tr class=\"{(pair.Value.Passed ? "" : "miss")}\">" +
+                                $"<td class=\"k\">{Html(pair.Key)}</td><td>(absent)</td>" +
+                                $"<td>{Html(pair.Value.Expected)}{(pair.Value.Passed ? "" : $" — {Html(pair.Value.Reason)}")}</td></tr>");
+            }
+
+            html.AppendLine("</table>");
+
+            if (proof.Proof.Deliveries.Count > 0)
+            {
+                html.AppendLine("<div class=\"sinks\">");
+                foreach (var delivery in proof.Proof.Deliveries)
+                    html.AppendLine($"<span class=\"sink{(delivery.Delivered ? "" : " no")}\" " +
+                                    $"title=\"{Html(delivery.Reason)}\">{Html(delivery.Sink)}</span>");
+                html.AppendLine("</div>");
+            }
+
+            AppendProofFailures(html, proof);
+
+            if (!string.IsNullOrEmpty(proof.ProofScreenshot))
+                html.AppendLine($"<img class=\"shot\" src=\"{Html(proof.ProofScreenshot)}\" alt=\"the moment the event fired\">");
+
+            html.AppendLine("</div>");
+        }
+
+        private static void AppendProofFailures(StringBuilder html, EventProofCase proof)
+        {
+            foreach (var expectation in proof.Expectations)
+            {
+                if (expectation.Passed || string.IsNullOrEmpty(expectation.Reason)) continue;
+
+                html.AppendLine($"<div class=\"msg\">{Html(expectation.Kind)}: {Html(expectation.Reason)}</div>");
+            }
         }
 
         private static void AppendSteps(StringBuilder html, List<StepRecord> steps)

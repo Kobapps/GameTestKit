@@ -65,8 +65,10 @@ namespace Kobapps.GameTestKit
                 foreach (var source in EditorDiscovery()) Add(source);
             }
 
-            // 3. Resources: works in built players.
-            if (!string.IsNullOrEmpty(settings.RuntimeResourcesFolder))
+            // 3. Resources: works in built players. Skipped in the Editor, where the AssetDatabase pass
+            // above has already seen these files at their real paths — and a real path is what a
+            // category is derived from, which Resources.LoadAll cannot give us.
+            if (EditorDiscovery == null && !string.IsNullOrEmpty(settings.RuntimeResourcesFolder))
             {
                 foreach (var asset in Resources.LoadAll<TextAsset>(settings.RuntimeResourcesFolder))
                 {
@@ -101,20 +103,72 @@ namespace Kobapps.GameTestKit
         {
             var tests = new List<GameTest>();
 
+            // Category + name, not the file name: two folders may each hold a "smoke" test, and both
+            // are real. What must not appear twice is one logical test found through two origins — the
+            // Resources copy of a script that StreamingAssets also carries, say — so the later origin
+            // replaces the earlier one, which is what makes a StreamingAssets drop an override.
+            var byIdentity = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
             foreach (var source in DiscoverSources(options))
             {
                 if (source.IsSuite) continue;
-                try { tests.Add(TestScriptParser.ParseTest(source.Json, source.Path)); }
+
+                GameTest test;
+                try { test = TestScriptParser.ParseTest(source.Json, source.Path); }
                 catch (Exception e)
                 {
                     var message = $"{source.Path}: {e.Message}";
                     errors?.Add(message);
                     Debug.LogError($"[GameTestKit] {message}");
+                    continue;
+                }
+
+                var identity = $"{TestCategory.Normalize(test.Category)}/{test.Name}";
+
+                if (byIdentity.TryGetValue(identity, out var existing))
+                {
+                    // Say so. Collapsing two origins of one test is the intent, but when the paths
+                    // differ it is just as likely to be a stale copy somebody left behind — and
+                    // silently running the wrong one of those costs an afternoon.
+                    var previous = tests[existing];
+                    if (!string.Equals(previous.SourcePath, test.SourcePath, StringComparison.OrdinalIgnoreCase))
+                        Debug.LogWarning(
+                            $"[GameTestKit] Two tests are both '{test.Name}' in category " +
+                            $"'{TestCategory.Display(test.Category)}'. Running '{test.SourcePath}' and " +
+                            $"ignoring '{previous.SourcePath}'. Delete one, rename one, or move one to " +
+                            "another category.");
+
+                    tests[existing] = test;
+                }
+                else
+                {
+                    byIdentity[identity] = tests.Count;
+                    tests.Add(test);
                 }
             }
 
-            tests.Sort((a, b) => string.CompareOrdinal(a.Name, b.Name));
+            // Category first so the list reads as a folder tree even before the window groups it.
+            tests.Sort((a, b) =>
+            {
+                int byCategory = TestCategory.Compare(a.Category, b.Category);
+                return byCategory != 0 ? byCategory : string.CompareOrdinal(a.Name, b.Name);
+            });
+
             return tests;
+        }
+
+        /// <summary>Every category that has at least one test in it, parents included, in tree order.</summary>
+        public static List<string> DiscoverCategories(IEnumerable<GameTest> tests)
+        {
+            var all = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var test in tests)
+                foreach (var category in TestCategory.SelfAndAncestors(test.Category))
+                    all.Add(category);
+
+            var ordered = new List<string>(all);
+            ordered.Sort(TestCategory.Compare);
+            return ordered;
         }
 
         /// <summary>Discovers suites (options + include lists).</summary>
@@ -188,11 +242,16 @@ namespace Kobapps.GameTestKit
             return results;
         }
 
+        /// <summary>
+        /// Identifies a file so the same one is not added twice. The whole path, not just the file
+        /// name: with categories, <c>Shop/smoke.gametest.json</c> and <c>Onboarding/smoke.gametest.json</c>
+        /// are two different tests. Duplicates that survive this are collapsed by category and name in
+        /// <see cref="DiscoverTests"/>, which can only be done once the scripts are parsed.
+        /// </summary>
         private static string NormalizeKey(string path)
         {
             if (string.IsNullOrEmpty(path)) return Guid.NewGuid().ToString();
-            var name = Path.GetFileName(path);
-            return name.ToLowerInvariant();
+            return path.Replace('\\', '/').ToLowerInvariant();
         }
     }
 }

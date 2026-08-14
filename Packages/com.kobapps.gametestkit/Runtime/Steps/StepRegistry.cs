@@ -149,6 +149,7 @@ namespace Kobapps.GameTestKit
             _builtinsRegistered = true;
             BuiltinSteps.RegisterAll();
             BotSteps.RegisterAll();
+            EventSteps.Register();
             RegisterDiscovered();
         }
 

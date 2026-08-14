@@ -1,0 +1,48 @@
+{
+  "name": "Purchase reports a buy the player could not afford",
+  "description": "The failure path of the same event. A funnel can only tell 'nobody tried' apart from 'everybody tried and could not afford it' if the declined attempt is reported too — so the absence of this event is itself the bug worth testing for.",
+  "tags": ["analytics", "demo"],
+  "category": "Analytics",
+
+  "setup": [
+    { "call": "demo.reset" },
+    { "call": "demo.start" },
+    { "waitForVisible": "id:shop_button" },
+
+    // Spend down to 40 so the sword at 60 is out of reach. Setup, not steps: this is arranging the
+    // world, and a failure here should read as a broken fixture rather than a product defect.
+    { "click": "id:shop_button" },
+    { "waitForVisible": "id:shop_panel" },
+    { "click": "id:buy_shield" },
+    { "waitFor": "demo.gold == 70", "timeout": 5 },
+    { "click": "id:buy_shield" },
+    { "waitFor": "demo.gold == 40", "timeout": 5 }
+  ],
+
+  "steps": [
+    { "eventCase": "Purchase", "case": "declined" },
+
+    { "click": "id:buy_sword" },
+    { "waitForEvent": "Purchase", "within": 5 },
+
+    { "expectEvent": "Purchase",
+      "count": 1,
+      "props": {
+        "Item": "Sword",
+        "Purchase_Result": "@const:Kobapps.GameTestKit.Samples.DemoTelemetry.RESULT_DECLINED",
+        "Fail_Reason": "@const:Kobapps.GameTestKit.Samples.DemoTelemetry.REASON_NOT_ENOUGH_GOLD",
+
+        // Unchanged: a declined purchase that still moved the balance is the worst kind of bug,
+        // because the player notices before the dashboard does.
+        "Gold_After": 40,
+        "Items_Owned": 2
+      },
+      "delivered": ["Console", "Remote"] },
+
+    // The game shows the refusal as well as reporting it.
+    { "assertText": "id:status_label", "contains": "Not enough gold" },
+    { "assert": "demo.gold == 40", "message": "A declined purchase must not spend anything" },
+
+    { "eventProof": true }
+  ]
+}

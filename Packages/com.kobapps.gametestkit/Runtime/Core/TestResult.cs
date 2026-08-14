@@ -53,6 +53,10 @@ namespace Kobapps.GameTestKit
         public string Name;
         public string Description;
         public string SourcePath;
+
+        /// <summary>The category the test ran from, e.g. <c>Shop/Checkout</c>. Empty when it has none.</summary>
+        public string Category = "";
+
         public readonly List<string> Tags = new List<string>();
         public TestStatus Status = TestStatus.NotRun;
         public string Message;
@@ -64,6 +68,12 @@ namespace Kobapps.GameTestKit
         public readonly List<string> Artifacts = new List<string>();
         public readonly List<LogEntry> Logs = new List<LogEntry>();
         public PerformanceSummary Performance;
+
+        /// <summary>
+        /// The event proofs this test produced — what it asserted about the game's telemetry and what
+        /// the wire actually carried. Empty for a test that asserts nothing about events.
+        /// </summary>
+        public readonly List<EventProofCase> EventProofs = new List<EventProofCase>();
 
         public bool IsFailure => Status == TestStatus.Failed || Status == TestStatus.Error || Status == TestStatus.Timeout;
     }
